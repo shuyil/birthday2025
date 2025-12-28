@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Scavenger Hunt</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css">
+
+<style>
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+/* ---------- MAP ---------- */
+#map {
+  height: 100%;
+  pointer-events: none;
+}
+
+/* ---------- FULLSCREEN SCREENS ---------- */
+.screen {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  opacity: 1;
+  transition: opacity 0.8s ease;
+}
+
+.screen.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.screen.fade-out {
+  opacity: 0;
+}
+
+.screen img {
+  width: 100vw;
+  height: 100vh;
+  object-fit: contain;
+}
+
+.screen button {
+  position: absolute;
+  bottom: 40px;
+  padding: 14px 32px;
+  font-size: 18px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  z-index: 3;
+}
+
+/* ---------- MULTI-INPUT ROW ---------- */
+.multi-inputs {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.multi-inputs input {
+  width: 90px;          /* wider than code inputs for phrases */
+  padding: 10px;
+  font-size: 14px;
+  text-align: center;
+}
+
+/* ---------- FIREWORKS ---------- */
+#fireworks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* ---------- POPUP ---------- */
+.leaflet-popup-content-wrapper {
+  width: 440px;
+  max-width: 90vw;
+}
+
+.question-popup img {
+  width: 100%;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.question-popup input,
+.question-popup button {
+  width: 100%;
+  padding: 10px;
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
+.code-inputs {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.code-inputs input {
+  width: 44px;
+  height: 44px;
+  font-size: 20px;
+  text-align: center;
+}
+
+.feedback {
+  font-weight: bold;
+}
+
+/* ---------- EMOJI CHOICES ---------- */
+.emoji-options {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin: 12px 0;
+}
+
+.emoji-options button {
+  font-size: 36px;
+  background: none;
+  border: 2px solid #ddd;
+  border-radius: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.emoji-options button:hover {
+  transform: scale(1.1);
+  border-color: #aaa;
+}
+
+
+/* ---------- VINTAGE ELEGANT BUTTON ---------- */
+.celebrate-btn {
+  font-family: "Georgia", "Times New Roman", serif;
+  font-size: 20px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+
+  padding: 14px 42px;
+
+  background: #f5f0e6;              /* aged paper */
+  color: #4a3b2a;                   /* sepia ink */
+
+  border: 2px solid #c8b89a;
+  border-radius: 6px;
+
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.6),
+    0 4px 10px rgba(0,0,0,0.15);
+
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+/* Hover — subtle lift */
+.celebrate-btn:hover {
+  background: #f1eadc;
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.7),
+    0 6px 14px rgba(0,0,0,0.18);
+}
+
+/* Press — letterpress feel */
+.celebrate-btn:active {
+  transform: translateY(0);
+  box-shadow:
+    inset 0 2px 4px rgba(0,0,0,0.2),
+    0 2px 6px rgba(0,0,0,0.15);
+}
+
+/* Optional: soft breathing effect (very subtle) */
+@keyframes vintageBreath {
+  0%, 100% { box-shadow: 0 4px 10px rgba(0,0,0,0.15); }
+  50% { box-shadow: 0 6px 14px rgba(0,0,0,0.2); }
+}
+
+.celebrate-btn {
+  animation: vintageBreath 4s ease-in-out infinite;
+}
+
+</style>
+</head>
+
+<body>
+
+<!-- START SCREEN -->
+<div id="startScreen" class="screen">
+  <img src="img/front-page.png">
+  <button id="startBtn" class="celebrate-btn">Start</button>
+</div>
+
+<!-- CONGRATS SCREEN (NEW) -->
+<div id="congratsScreen" class="screen hidden">
+  <img src="img/congrat.png">
+  <canvas id="fireworks"></canvas>
+  <button id="toFinalBtn" class="celebrate-btn">Yes!!!!!!</button>
+
+</div>
+
+<!-- END SCREEN -->
+<div id="endScreen" class="screen hidden">
+  <img src="img/final-page.png">
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+
+<script>
+// --------------------------------------------------
+// TASKS
+// --------------------------------------------------
+const tasks = [
+  {
+    image: "img/bardwell.png",
+    type: "choice",
+    options: ["😊", "🤩", "😍"],
+    lat: 51.767641544582304,
+    lng: -1.2585838033138692
+  }
+  ,
+  {
+    image: "img/brew.png",
+    type: "multi",
+    answers: [
+      "5",
+      "matcha",
+      "blue",
+      "laufey"
+    ],
+    lat: 51.764925151280785,
+    lng: -1.26099701865828
+  },
+  {
+    image: "img/lamb.png",
+    type: "code",
+    codeLength: 4,
+    answer: "2531",
+    lat: 51.75906550686475,
+    lng: -1.250745862838914
+  },
+  {
+    image: "img/garden.png",
+    type: "text",
+    answer: "Melinyel arinya, yéni ú tië",
+    lat: 51.75685735972623,
+    lng: -1.2568626474949092
+  },
+  {
+    image: "img/pigeon.png",
+    type: "text",
+    answer: "我爱你",
+    lat: 51.75637319204575,
+    lng: -1.2587830461939054
+  }
+];
+
+let currentIndex = 0;
+let userMarker, targetMarker, routingControl;
+let watchId;
+let hasFlownIn = false;
+let rabbitStage = 0;
+
+// --------------------------------------------------
+// MAP
+// --------------------------------------------------
+const map = L.map("map", {
+  zoomControl: false,
+  dragging: false,
+  scrollWheelZoom: false,
+  doubleClickZoom: false,
+  boxZoom: false,
+  keyboard: false
+}).setView([54.5, -3], 5);
+
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19
+}).addTo(map);
+
+// --------------------------------------------------
+// RESPONSIVE ICON HELPERS
+// --------------------------------------------------
+function screenBasedSize(base, scaleratio) {
+  const minDim = Math.min(window.innerWidth, window.innerHeight);
+  const scale = minDim / scaleratio;
+  return Math.max(28, Math.min(base * scale, 64));
+}
+
+function createRabbitIcon(stage = 0) {
+  const height = screenBasedSize(48, 200);
+  const images = ["img/rabbit.png", "img/rabbit2.png"];
+  return L.icon({
+    iconUrl: images[Math.min(stage, images.length - 1)],
+    iconSize: [height, height],
+    iconAnchor: [height / 2, height]
+  });
+}
+
+function createTargetIcon() {
+  const height = screenBasedSize(48, 300);
+  return L.icon({
+    iconUrl: "img/target.png",
+    iconSize: [height, height],
+    iconAnchor: [height / 2, height],
+    popupAnchor: [0, -height]
+  });
+}
+
+// --------------------------------------------------
+// START BUTTON
+// --------------------------------------------------
+document.getElementById("startBtn").onclick = () => {
+  const screen = document.getElementById("startScreen");
+  screen.classList.add("hidden");
+
+  setTimeout(() => {
+    screen.style.display = "none";
+    unlockMap();
+    startGeolocation();
+  }, 800);
+};
+
+function unlockMap() {
+  document.getElementById("map").style.pointerEvents = "auto";
+  map.dragging.enable();
+  map.scrollWheelZoom.enable();
+  map.doubleClickZoom.enable();
+  map.boxZoom.enable();
+  map.keyboard.enable();
+  L.control.zoom().addTo(map);
+}
+
+// --------------------------------------------------
+// GEOLOCATION
+// --------------------------------------------------
+function startGeolocation() {
+  watchId = navigator.geolocation.watchPosition(pos => {
+    const latlng = [pos.coords.latitude, pos.coords.longitude];
+
+    if (!userMarker) {
+      userMarker = L.marker(latlng, {
+        icon: createRabbitIcon(rabbitStage),
+        zIndexOffset: 1000
+      }).addTo(map);
+
+      if (!hasFlownIn) {
+        hasFlownIn = true;
+        map.flyTo(latlng, 16, { duration: 3 });
+
+        setTimeout(() => {
+          showTarget();
+          updateRoute();
+        }, 3000);
+      }
+    } else {
+      userMarker.setLatLng(latlng);
+      updateRoute();
+    }
+  });
+}
+
+// --------------------------------------------------
+// TARGET
+// --------------------------------------------------
+function showTarget() {
+  if (targetMarker) map.removeLayer(targetMarker);
+  const task = tasks[currentIndex];
+
+  targetMarker = L.marker([task.lat, task.lng], {
+    icon: createTargetIcon(),
+    zIndexOffset: 100
+  }).addTo(map);
+
+  targetMarker.bindPopup(createPopup(task), { maxWidth: 440 });
+}
+
+// --------------------------------------------------
+// POPUP
+// --------------------------------------------------
+function createPopup(task) {
+  const div = document.createElement("div");
+  div.className = "question-popup";
+
+  const img = document.createElement("img");
+  img.src = task.image;
+  div.appendChild(img);
+
+  const feedback = document.createElement("div");
+  div.appendChild(feedback);
+
+  if (task.type === "text") {
+    const input = document.createElement("input");
+    input.lang = /[\u4e00-\u9fff]/.test(task.answer) ? "zh" : "en";
+
+    const btn = document.createElement("button");
+    btn.textContent = "Submit";
+    btn.onclick = () =>
+      input.value.trim().normalize("NFC") === task.answer.normalize("NFC")
+        ? success(feedback)
+        : fail(feedback, input);
+
+    div.append(input, btn);
+  }
+
+  if (task.type === "code") {
+    const wrap = document.createElement("div");
+    wrap.className = "code-inputs";
+    const inputs = [];
+
+    for (let i = 0; i < task.codeLength; i++) {
+      const inp = document.createElement("input");
+      inp.maxLength = 1;
+      inp.inputMode = "text";
+      inp.autocapitalize = "characters";
+      inp.style.textTransform = "uppercase";
+      inputs.push(inp);
+      wrap.appendChild(inp);
+    }
+
+    const btn = document.createElement("button");
+    btn.textContent = "Unlock";
+    btn.onclick = () =>
+      inputs.map(i => i.value).join("") === task.answer
+        ? success(feedback)
+        : fail(feedback);
+
+    div.append(wrap, btn);
+  }
+
+  // -------- MULTI-INPUT QUESTION --------
+
+  if (task.type === "multi") {
+    const wrap = document.createElement("div");
+    wrap.className = "multi-inputs";
+
+    const inputs = [];
+
+    for (let i = 0; i < task.answers.length; i++) {
+      const input = document.createElement("input");
+      input.placeholder = `${i + 1}`;
+      inputs.push(input);
+      wrap.appendChild(input);
+    }
+
+    const btn = document.createElement("button");
+    btn.textContent = "Submit";
+
+    btn.onclick = () => {
+      const correct = inputs.every((inp, idx) =>
+        inp.value.trim().normalize("NFC").toLowerCase() ===
+        task.answers[idx].normalize("NFC").toLowerCase()
+      );
+
+      correct ? success(feedback) : fail(feedback);
+    };
+
+    div.append(wrap, btn);
+  }
+
+
+  // -------- EMOJI CHOICE QUESTION --------
+  if (task.type === "choice") {
+    const wrapper = document.createElement("div");
+    wrapper.className = "emoji-options";
+
+    task.options.forEach(emoji => {
+      const btn = document.createElement("button");
+      btn.textContent = emoji;
+
+      btn.onclick = () => {
+        // No feedback shown
+        success({ textContent: "", style: {} });
+      };
+
+      wrapper.appendChild(btn);
+    });
+
+    div.appendChild(wrapper);
+  }
+
+
+
+  return div;
+}
+
+// --------------------------------------------------
+// SUCCESS / FAIL
+// --------------------------------------------------
+function success(feedback) {
+  feedback.textContent = "✓ Correct!";
+  feedback.style.color = "green";
+
+  setTimeout(() => {
+    map.closePopup();
+    currentIndex++;
+
+    if (currentIndex === 2 && userMarker) {
+      rabbitStage = 1;
+      userMarker.setIcon(createRabbitIcon(rabbitStage));
+    }
+
+    if (currentIndex < tasks.length) {
+      showTarget();
+      updateRoute();
+    } else {
+      endGame();
+    }
+  }, 800);
+}
+
+function fail(feedback, input) {
+  feedback.textContent = "✗ Try again";
+  feedback.style.color = "red";
+  if (input) input.value = "";
+}
+
+// --------------------------------------------------
+// END GAME (MODIFIED MINIMALLY)
+// --------------------------------------------------
+function endGame() {
+  if (watchId) navigator.geolocation.clearWatch(watchId);
+  if (routingControl) map.removeControl(routingControl);
+  if (targetMarker) map.removeLayer(targetMarker);
+
+  document.getElementById("congratsScreen").classList.remove("hidden");
+  startFireworks();
+}
+
+// --------------------------------------------------
+// ROUTING
+// --------------------------------------------------
+function updateRoute() {
+  if (!userMarker || !tasks[currentIndex]) return;
+
+  if (routingControl) map.removeControl(routingControl);
+
+  routingControl = L.Routing.control({
+    waypoints: [
+      userMarker.getLatLng(),
+      L.latLng(tasks[currentIndex].lat, tasks[currentIndex].lng)
+    ],
+    addWaypoints: false,
+    draggableWaypoints: false,
+    show: false,
+    createMarker: () => null
+  }).addTo(map);
+}
+
+// --------------------------------------------------
+// RESIZE HANDLER
+// --------------------------------------------------
+window.addEventListener("resize", () => {
+  if (userMarker) userMarker.setIcon(createRabbitIcon(rabbitStage));
+  if (targetMarker) targetMarker.setIcon(createTargetIcon());
+});
+
+// --------------------------------------------------
+// FIREWORKS (NEW, ADDITIVE)
+// --------------------------------------------------
+const canvas = document.getElementById("fireworks");
+const ctx = canvas.getContext("2d");
+let fireworksRunning = false;
+let particles = [];
+
+function resizeFireworks() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resizeFireworks();
+window.addEventListener("resize", resizeFireworks);
+
+function startFireworks() {
+  fireworksRunning = true;
+  animateFireworks();
+}
+
+function animateFireworks() {
+  if (!fireworksRunning) return;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (Math.random() < 0.05) explode();
+
+  particles.forEach(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life--;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x, p.y, 2, 2);
+  });
+
+  particles = particles.filter(p => p.life > 0);
+  requestAnimationFrame(animateFireworks);
+}
+
+function explode() {
+  const x = Math.random() * canvas.width;
+  const y = Math.random() * canvas.height * 0.5;
+
+  for (let i = 0; i < 40; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 6,
+      vy: (Math.random() - 0.5) * 6,
+      life: 60,
+      color: `hsl(${Math.random() * 360},100%,60%)`
+    });
+  }
+}
+
+// --------------------------------------------------
+// CONGRATS → FINAL TRANSITION
+// --------------------------------------------------
+document.getElementById("toFinalBtn").onclick = () => {
+  const congrats = document.getElementById("congratsScreen");
+  const end = document.getElementById("endScreen");
+  const mapEl = document.getElementById("map");
+
+  congrats.classList.add("fade-out");
+
+  setTimeout(() => {
+    // Stop fireworks
+    fireworksRunning = false;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Hide congrats screen
+    congrats.classList.add("hidden");
+    congrats.classList.remove("fade-out");
+
+    // 🔒 Hide map permanently
+    mapEl.classList.add("hidden");
+
+    // 🎁 Show final page
+    end.classList.remove("hidden");
+  }, 800);
+};
+
+</script>
+
+</body>
+</html>
